@@ -1,0 +1,100 @@
+dependencies:
+- type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: openai/gpt-4o-mini  # Verify if this identifier is correct
+
+workflow:
+  tools: []
+  graph:
+    edges:
+      - source: start
+        target: user_input
+      - source: user_input
+        target: intent_classifier
+      - source: intent_classifier
+        target: param_extractor
+      - source: param_extractor
+        target: completeness_check
+      - source: completeness_check
+        target: missing_handler
+        condition: missing_fields|length > 0
+      - source: completeness_check
+        target: order_processor
+        condition: missing_fields|length == 0
+      - source: order_processor
+        target: doc_generator
+      - source: doc_generator
+        target: final_response
+      - source: missing_handler
+        target: user_input
+    nodes:
+      - id: start
+        type: start
+        data:
+          variables: []
+
+      - id: user_input
+        type: question-input
+        data:
+          answer: "请输入订舱需求（示例格式）：\nPOL: 上海\nPOD: 洛杉矶\nETD: 2024-05-20\n集装箱类型: 40HQ\n承运人: MAERSK\n船名航次: MSC1234\n抬头: ABC公司\n订舱代理: XYZ物流"
+
+      - id: intent_classifier
+        type: llm
+        data:
+          model:
+            provider: openai
+            name: gpt-4o-mini
+          prompt_template:
+            - role: system
+              text: |
+                识别用户意图并结构化输入：
+                {
+                  "required_fields": ["POL","POD","ETD","ContainerType","Carrier","VesselVoy","Title","BookingAgent"],
+                  "user_input": "{{query}}"
+                }
+
+      - id: param_extractor
+        type: parameter-extractor
+        data:
+          rules:
+            - field: POL
+              type: string
+              pattern: "POL[:：]\\s*(.+?)(?=\\s|$)"
+            - field: POD
+              type: string
+              pattern: "POD[:：]\\s*(.+?)(?=\\s|$)"
+            - field: ETD
+              type: date
+              pattern: "ETD[:：]\\s*(\\d{4}-\\d{2}-\\d{2})"
+            - field: ContainerType
+              type: string
+              pattern: "集装箱类型[:：]\\s*(.+)"
+            - field: Carrier
+              type: string
+              pattern: "承运人[:：]\\s*(.+)"
+            - field: VesselVoy
+              type: string
+              pattern: "船名航次[:：]\\s*(.+)"
+            - field: Title
+              type: string
+              pattern: "抬头[:：]\\s*(.+)"
+            - field: BookingAgent
+              type: string
+              pattern: "订舱代理[:：]\\s*(.+)"
+
+      - id: completeness_check
+        type: condition
+        data:
+          conditions:
+            - variable: missing_fields
+              operator: length_gt
+              value: 0
+              expression: |
+                {% set required = ["POL","POD","ETD","ContainerType","Carrier","VesselVoy","Title","BookingAgent"] %}
+                {% set missing = [] %}
+                {% for field in required %}
+                  {% if not context[field] %}
+                    {% do missing.append(field) %}
+                  {% endif %}
+                {% endfor %}
+                {{ missing|length > 0 }}
