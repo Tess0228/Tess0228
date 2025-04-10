@@ -1,0 +1,166 @@
+app:
+  description: 用于协助生成预定仓位的下单
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: advanced-chat
+  name: 测试应用
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/siliconflow:0.0.7@8b9d2f57d314120744c245b6fe4f8701e1a7490a500d9fb74e9e9dceeaea5f70
+kind: app
+version: 0.1.5
+workflow:
+  conversation_variables:
+  # ...保留原有变量...
+  # 🚨新增变量
+  - description: 毛重
+    id: 3c5158b5-fed0-42b3-8d93-d36f639829e1
+    name: GrossWeight
+    selector:
+    - conversation
+    - GrossWeight
+    value: ''
+    value_type: string
+  - description: 集装箱类型
+    id: afc9d6fb-ede7-4543-a2ea-8fca6266a058
+    name: ContainerType
+    selector:
+    - conversation
+    - ContainerType
+    value: ''
+    value_type: string
+  environment_variables:
+  # 🚨新增邮件配置
+  - key: SMTP_SERVER
+    value: 'smtp.example.com'
+  - key: SMTP_PORT
+    value: '587'
+  - key: EMAIL_USER
+    value: 'sender@example.com'
+  - key: EMAIL_PASSWORD
+    value: 'password123'
+  features:
+    # ...保留原有特征配置...
+  graph:
+    edges:
+    # ...保留原有连接关系...
+    # 🚨新增邮件节点连接
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: 1744043997052-source-1744044999999-target
+      source: '1744043997052'
+      sourceHandle: source
+      target: '1744044999999'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    # 🚨修改信息提取节点代码
+    - data:
+        code: |
+          import re
+          def extract_info(text):
+              patterns = {
+                  "POL": r"POL[:：]?\s*([^\s,;]+)",
+                  "POD": r"POD[:：]?\s*([^\s,;]+)",
+                  "ETD": r"ETD[:：]?\s*([^\s,;]+)",
+                  "ContainerType": r"Container Type[:：]?\s*([^\s,;]+)",
+                  "Shipper": r"Shipper[:：]?\s*([^\s,;]+)",
+                  "Carrier": r"Carrier[:：]?\s*([^\s,;]+)",
+                  "VesselVoy": r"Vessel/Voy[:：]?\s*([^\s,;]+)",
+                  "GrossWeight": r"Gross weight[:：]?\s*([^\s,;]+)"
+              }
+              extracted = {}
+              missing_fields = []
+              for field, pattern in patterns.items():
+                  match = re.search(pattern, text, re.IGNORECASE)
+                  extracted[field] = match.group(1).strip() if match else None
+                  if not extracted[field]:
+                      missing_fields.append(field)
+              return extracted, missing_fields
+
+          extracted_data, missing_fields = extract_info(user_input)
+          # 🚨修改订单号生成规则
+          import random
+          order_number = f"SASS{random.randint(10000000, 99999999)}"
+          output = {
+              "extracted_data": extracted_data,
+              "missing_fields": missing_fields,
+              "order_number": order_number
+          }
+        # ...其余代码节点配置保持不变...
+    
+    # 🚨新增邮件发送节点
+    - data:
+        code: |
+          import smtplib
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+          from email.mime.application import MIMEApplication
+
+          def send_email(pdf_path, order_info):
+              msg = MIMEMultipart()
+              msg['From'] = EMAIL_USER
+              msg['To'] = 'booking@company.com'
+              msg['Subject'] = f'新订舱单 {order_info["order_number"]}'
+              
+              body = f'''完整订单信息：
+              订单号：{order_info['order_number']}
+              POL：{order_info['POL']}
+              POD：{order_info['POD']}
+              ETD：{order_info['ETD']}
+              集装箱类型：{order_info['ContainerType']}
+              发货人：{order_info['Shipper']}
+              承运人：{order_info['Carrier']}
+              船名航次：{order_info['VesselVoy']}
+              毛重：{order_info['GrossWeight']}'''
+              
+              msg.attach(MIMEText(body, 'plain'))
+              
+              with open(pdf_path, 'rb') as f:
+                  attach = MIMEApplication(f.read(), _subtype="pdf")
+                  attach.add_header('Content-Disposition', 'attachment', filename=pdf_path)
+                  msg.attach(attach)
+              
+              with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
+                  server.starttls()
+                  server.login(EMAIL_USER, EMAIL_PASSWORD)
+                  server.send_message(msg)
+              
+              return True
+
+          send_email(pdf_path, extracted_data.update({"order_number": order_number}))
+          output = {"email_status": "success"}
+        code_language: python3
+        title: 发送邮件
+        type: code
+        # ...其他必要配置...
+      id: '1744044999999'
+      # ...节点位置配置...
+
+    # 🚨修改条件判断逻辑
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: '>' 
+            value: '0'
+            variable_selector:
+            - '1744042959072'
+            - missing_fields
+        # ...其他条件配置...
+    
+    # 🚨修改最终回复节点
+    - data:
+        answer: |
+          f"订单已生成并发送至邮箱！\n
+          订单号：{{#1744042959072.order_number#}}\n
+          PDF下载：{{#1744043997052.pdf_path#}}"
+        type: answer
+        # ...其他配置...
