@@ -1,0 +1,184 @@
+app:
+  description: 智能订舱系统
+  icon: 🚢
+  icon_background: "#E6F4FF"
+  mode: workflow
+  name: 海运订舱系统
+  opening_statement: "请提供订舱信息（需包含POL/POD/ETD/集装箱类型/承运人/船名航次/抬头/订舱代理）"
+dependencies:
+- type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: openai/gpt-4o-mini
+kind: app
+version: 1.2.0
+workflow:
+  tools: []
+  graph:
+    edges:
+    - source: start
+      target: user_input
+    - source: user_input
+      target: intent_classifier
+    - source: intent_classifier
+      target: param_extractor
+    - source: param_extractor
+      target: completeness_check
+    - source: completeness_check
+      target: missing_handler
+      condition: missing_fields|length > 0
+    - source: completeness_check
+      target: order_processor
+      condition: missing_fields|length == 0
+    - source: order_processor
+      target: doc_generator
+    - source: doc_generator
+      target: final_response
+    - source: missing_handler
+      target: user_input
+    nodes:
+      - id: start
+        type: start
+        data:
+          variables: []
+
+      - id: user_input
+        type: question-input
+        data:
+          answer: "请输入订舱需求（示例格式）：\nPOL: 上海\nPOD: 洛杉矶\nETD: 2024-05-20\n集装箱类型: 40HQ\n承运人: MAERSK\n船名航次: MSC1234\n抬头: ABC公司\n订舱代理: XYZ物流"
+
+      - id: intent_classifier
+        type: llm
+        data:
+          model:
+            provider: openai
+            name: gpt-4o-mini
+          prompt_template:
+            - role: system
+              text: |
+                识别用户意图并结构化输入：
+                {
+                  "required_fields": ["POL","POD","ETD","ContainerType","Carrier","VesselVoy","Title","BookingAgent"],
+                  "user_input": "{{query}}"
+                }
+
+      - id: param_extractor
+        type: parameter-extractor
+        data:
+          rules:
+            - field: POL
+              type: string
+              pattern: "POL[:：]\\s*(.+?)(?=\\s|$)"
+            - field: POD
+              type: string
+              pattern: "POD[:：]\\s*(.+?)(?=\\s|$)"
+            - field: ETD
+              type: date
+              pattern: "ETD[:：]\\s*(\\d{4}-\\d{2}-\\d{2})"
+            - field: ContainerType
+              type: string
+              pattern: "集装箱类型[:：]\\s*(.+)"
+            - field: Carrier
+              type: string
+              pattern: "承运人[:：]\\s*(.+)"
+            - field: VesselVoy
+              type: string
+              pattern: "船名航次[:：]\\s*(.+)"
+            - field: Title
+              type: string
+              pattern: "抬头[:：]\\s*(.+)"
+            - field: BookingAgent
+              type: string
+              pattern: "订舱代理[:：]\\s*(.+)"
+
+      - id: completeness_check
+        type: condition
+        data:
+          conditions:
+            - variable: missing_fields
+              operator: length_gt
+              value: 0
+              expression: |
+                {% set required = ["POL","POD","ETD","ContainerType","Carrier","VesselVoy","Title","BookingAgent"] %}
+                {% set missing = [] %}
+                {% for field in required %}
+                  {% if not context[field] %}
+                    {% do missing.append(field) %}
+                  {% endif %}
+                {% endfor %}
+                {{ missing|length > 0 }}
+
+      - id: missing_handler
+        type: llm
+        data:
+          model:
+            provider: openai
+            name: gpt-4o-mini
+          prompt_template:
+            - role: system
+              text: |
+                请用专业口吻要求用户补全以下字段：
+                {{ missing_fields|join(', ') }}
+                示例回复："请补充以下必要信息：XXX, YYY"
+
+      - id: order_processor
+        type: code
+        data:
+          code: |
+            import random
+            from datetime import datetime
+            
+            # 生成AXXXX格式单号
+            order_number = 'A' + str(random.randint(1000, 9999)).zfill(4)
+            
+            # 构建订单对象
+            order_data = {
+              "order_number": order_number,
+              "timestamp": datetime.now().isoformat(),
+              **{k: v for k, v in context.items() if k in [
+                "POL","POD","ETD","ContainerType",
+                "Carrier","VesselVoy","Title","BookingAgent"
+              ]}
+            }
+          outputs:
+            - name: order_data
+              type: object
+
+      - id: doc_generator
+        type: code
+        data:
+          code: |
+            from reportlab.pdfgen import canvas
+            
+            def generate_pdf(data):
+                filename = f"{data['order_number']}.pdf"
+                c = canvas.Canvas(filename)
+                
+                y = 800
+                c.setFont("Helvetica-Bold", 16)
+                c.drawString(50, y, "海运订舱确认单")
+                
+                c.setFont("Helvetica", 12)
+                y -= 40
+                for field in [
+                  "order_number", "POL", "POD", "ETD",
+                  "ContainerType", "Carrier", "VesselVoy",
+                  "Title", "BookingAgent", "timestamp"
+                ]:
+                    c.drawString(50, y, f"{field}: {data.get(field,'')}")
+                    y -= 25
+                
+                c.save()
+                return filename
+            
+            pdf_path = generate_pdf(order_data)
+          outputs:
+            - name: pdf_path
+              type: string
+
+      - id: final_response
+        type: answer
+        data:
+          answer: |
+            🚢 订舱成功！
+            订单号：{{order_data.order_number}}
+            [下载确认单]({{pdf_path}})
