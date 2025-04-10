@@ -1,0 +1,229 @@
+app:
+  description: 集装箱订舱系统
+  icon: 🚢
+  icon_background: "#E6F4FF"
+  mode: workflow
+  name: 集装箱订舱系统
+  opening_statement: "请提供订舱信息（包含POL/POD/ETD/集装箱类型/发货人/承运人/船名航次/毛重）"
+  suggested_questions: []
+  suggested_questions_after_answer:
+    enabled: false
+dependencies:
+  - type: marketplace
+    value:
+      marketplace_plugin_unique_identifier: langgenius/siliconflow:0.0.7@8b9d2f57d314120744c245b6fe4f8701e1a7490a500d9fb74e9e9dceeaea5f70
+kind: app
+version: 1.2.0
+workflow:
+  conversation_variables:
+    - description: 起运港
+      id: pol
+      name: POL
+      type: string
+    - description: 目的港
+      id: pod
+      name: POD
+      type: string
+    - description: 预计离港时间
+      id: etd
+      name: ETD
+      type: string
+    - description: 集装箱类型
+      id: container_type
+      name: ContainerType
+      type: string
+    - description: 发货人
+      id: shipper
+      name: Shipper
+      type: string
+    - description: 承运人
+      id: carrier
+      name: Carrier
+      type: string
+    - description: 船名航次
+      id: vessel_voy
+      name: VesselVoy
+      type: string
+    - description: 毛重
+      id: gross_weight
+      name: GrossWeight
+      type: string
+  environment_variables:
+    - key: SMTP_CONFIG
+      value: '{"server":"smtp.example.com","port":587,"user":"noreply@example.com","password":"your_password"}' 
+  features:
+    file_upload:
+      enabled: true
+      image:
+        enabled: false
+  tools: []
+  graph:
+    edges:
+      - source: start
+        target: user_input
+      - source: user_input
+        target: info_extractor
+      - source: info_extractor
+        target: condition_check
+      - source: condition_check
+        target: missing_info_handler
+        condition: missing_fields|length > 0
+      - source: condition_check
+        target: order_generator
+        condition: missing_fields|length == 0
+      - source: order_generator
+        target: pdf_generator
+      - source: pdf_generator
+        target: email_sender
+      - source: email_sender
+        target: final_response
+      - source: missing_info_handler
+        target: user_input
+    nodes:
+      - id: start
+        type: start
+        data:
+          variables: []
+      
+      - id: user_input
+        type: question-input
+        data:
+          answer: "请提供订舱信息（格式示例）：\nPOL: 深圳\nPOD: ODESSA\nETD: 4.30\n集装箱类型: 1*40HQ\n发货人: ABD\n承运人: CMA\n船名航次: 12345\n毛重: 18T"
+      
+      - id: info_extractor
+        type: code
+        data:
+          code: |
+            import re
+            import random
+
+            def extract_info(text):
+                patterns = {
+                    "POL": r"POL[:：]?\s*(.+)",
+                    "POD": r"POD[:：]?\s*(.+)",
+                    "ETD": r"ETD[:：]?\s*(.+)",
+                    "ContainerType": r"集装箱类型[:：]?\s*(.+)",
+                    "Shipper": r"发货人[:：]?\s*(.+)",
+                    "Carrier": r"承运人[:：]?\s*(.+)",
+                    "VesselVoy": r"船名航次[:：]?\s*(.+)",
+                    "GrossWeight": r"毛重[:：]?\s*(.+)"
+                }
+                
+                extracted = {}
+                missing = []
+                for field, pattern in patterns.items():
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        extracted[field] = match.group(1).strip()
+                    else:
+                        missing.append(field)
+                
+                # 生成8位订单号
+                order_number = "SASS" + str(random.randint(10000000, 99999999))
+                
+                return {
+                    "extracted": extracted,
+                    "missing_fields": missing,
+                    "order_number": order_number
+                }
+          outputs:
+            - name: extracted
+              type: object
+            - name: missing_fields
+              type: array
+            - name: order_number
+              type: string
+      
+      - id: condition_check
+        type: condition
+        data:
+          conditions:
+            - variable: missing_fields
+              operator: length_gt
+              value: 0
+      
+      - id: missing_info_handler
+        type: answer
+        data:
+          answer: "请补全以下信息：{{missing_fields|join(', ')}}"
+      
+      - id: order_generator
+        type: code
+        data:
+          code: |
+            order_info = {
+                **extracted,
+                "order_number": order_number,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+          outputs:
+            - name: order_info
+              type: object
+      
+      - id: pdf_generator
+        type: code
+        data:
+          code: |
+            from reportlab.pdfgen import canvas
+            from datetime import datetime
+
+            def generate_pdf(data):
+                filename = f"{data['order_number']}.pdf"
+                c = canvas.Canvas(filename)
+                
+                c.setFont("Helvetica-Bold", 16)
+                c.drawString(50, 800, "订舱确认单")
+                c.setFont("Helvetica", 12)
+                
+                y = 750
+                for key, value in data.items():
+                    c.drawString(50, y, f"{key}: {value}")
+                    y -= 25
+                
+                c.save()
+                return filename
+
+            pdf_path = generate_pdf(order_info)
+          outputs:
+            - name: pdf_path
+              type: string
+      
+      - id: email_sender
+        type: code
+        data:
+          code: |
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            from email.mime.application import MIMEApplication
+            import json
+
+            config = json.loads(ENV['SMTP_CONFIG'])
+
+            msg = MIMEMultipart()
+            msg['From'] = config['user']
+            msg['To'] = 'operations@example.com'
+            msg['Subject'] = f"新订舱单 {order_info['order_number']}"
+
+            body = f"""订单详情：
+            {json.dumps(order_info, indent=2, ensure_ascii=False)}"""
+            
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            
+            with open(pdf_path, 'rb') as f:
+                part = MIMEApplication(f.read(), Name=pdf_path)
+                part['Content-Disposition'] = f'attachment; filename="{pdf_path}"'
+                msg.attach(part)
+            
+            with smtplib.SMTP(config['server'], config['port']) as server:
+                server.starttls()
+                server.login(config['user'], config['password'])
+                server.sendmail(config['user'], 'operations@example.com', msg.as_string())
+      
+      - id: final_response
+        type: answer
+        data:
+          answer: |
+            ✅ 订舱成功！
+            订单号：{{order_number}}
+            PDF文件已发送至operations@example.com
