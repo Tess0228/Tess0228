@@ -1,0 +1,167 @@
+app:
+  description: 海运订舱系统
+  icon: 🚢
+  icon_background: "#E6F4FF"
+  mode: advanced-chat
+  name: 海运订舱系统
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: openai/gpt-4
+kind: app
+version: 0.1.5
+workflow:
+  conversation_variables:
+  - description: POL
+    id: pol
+    name: POL
+    selector:
+    - conversation
+    - POL
+    value: ''
+    value_type: string
+  - description: POD
+    id: pod
+    name: POD
+    selector:
+    - conversation
+    - POD
+    value: ''
+    value_type: string
+  # 其他变量定义...
+  environment_variables:
+  - key: SMTP_SERVER
+    value: smtp.example.com
+  - key: SMTP_PORT 
+    value: '587'
+  features:
+    file_upload:
+      enabled: true
+  graph:
+    edges:
+    - source: start
+      target: user_input
+    - source: user_input
+      target: intent_check
+    - source: intent_check
+      target: param_extractor
+    - source: param_extractor
+      target: missing_check
+    - source: missing_check
+      target: missing_handler
+      condition: '{{#param_extractor.missing_fields#}}'
+    - source: missing_check
+      target: order_processor
+      condition: '{{^param_extractor.missing_fields#}}'
+    - source: order_processor
+      target: doc_generator
+    - source: doc_generator
+      target: final_response
+    - source: missing_handler
+      target: user_input
+    nodes:
+      - id: start
+        type: start
+        data:
+          variables: []
+
+      - id: user_input
+        type: question-input
+        data:
+          answer: "请输入订舱信息（示例）：\nPOL:上海 POD:洛杉矶 ETD:2024-05-20\n集装箱类型:40HQ 承运人:MAERSK\n船名航次:MSC1234 抬头:ABC公司 订舱代理:XYZ物流"
+
+      - id: intent_check
+        type: llm
+        data:
+          model:
+            name: gpt-4
+            provider: openai
+          prompt_template:
+            - role: system
+              text: |
+                识别是否为有效订舱请求，响应格式：
+                {"is_valid": true/false}
+
+      - id: param_extractor
+        type: code
+        data:
+          code: |
+            import re
+            required_fields = ["POL","POD","ETD","ContainerType","Carrier","VesselVoy","Title","BookingAgent"]
+            
+            patterns = {
+                "POL": r"POL[:：]?\s*([^\s]+)",
+                "POD": r"POD[:：]?\s*([^\s]+)",
+                "ETD": r"ETD[:：]?\s*(\d{4}-\d{2}-\d{2})",
+                "ContainerType": r"集装箱类型[:：]?\s*([^\s]+)",
+                "Carrier": r"承运人[:：]?\s*([^\s]+)",
+                "VesselVoy": r"船名航次[:：]?\s*([^\s]+)",
+                "Title": r"抬头[:：]?\s*([^\s]+)",
+                "BookingAgent": r"订舱代理[:：]?\s*([^\s]+)"
+            }
+            
+            extracted = {}
+            missing = []
+            for field, pattern in patterns.items():
+                match = re.search(pattern, "{{#user_input.message#}}", re.IGNORECASE)
+                extracted[field] = match.group(1) if match else None
+                if not extracted[field]:
+                    missing.append(field)
+            
+            output = {
+                "extracted_data": extracted,
+                "missing_fields": missing
+            }
+          outputs:
+            extracted_data: object
+            missing_fields: array
+
+      - id: missing_check
+        type: if-else
+        data:
+          cases:
+            - case_id: 'true'
+              conditions:
+                - variable: param_extractor.missing_fields
+                  operator: not_empty
+
+      - id: missing_handler
+        type: llm
+        data:
+          model:
+            name: gpt-4
+            provider: openai
+          prompt_template:
+            - role: system
+              text: |
+                请用中文要求用户补全：{{#param_extractor.missing_fields#}}
+
+      - id: order_processor
+        type: code
+        data:
+          code: |
+            import random
+            order_number = "A" + str(random.randint(1000, 9999)).zfill(4)
+            output = {
+                "order_number": order_number,
+                "POL": "{{#param_extractor.extracted_data.POL#}}",
+                "POD": "{{#param_extractor.extracted_data.POD#}}",
+                # 其他字段...
+            }
+
+      - id: doc_generator
+        type: code
+        data:
+          code: |
+            from reportlab.pdfgen import canvas
+            # PDF生成代码（同之前版本）
+            output = {"pdf_path": "/path/to/file.pdf"}
+
+      - id: final_response
+        type: answer
+        data:
+          answer: |
+            订单号：{{#order_processor.order_number#}}
+            下载：{{#doc_generator.pdf_path#}}
