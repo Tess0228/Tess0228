@@ -1,0 +1,181 @@
+app:
+  description: '用户输入订舱信息: POL/POD/ETD/Container Type/Carrier(承运人）/Vesl/Voy(船名/航次)/
+    tittle  订舱代理'
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: advanced-chat
+  name: 智能订舱助手
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.0.15@5f610705111ac49d93c4ea5eaac690abaeb3b4a87599c48e5165b549b4c47f10
+kind: app
+version: 0.1.5
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1744272651292-source-1744274748426-target
+      source: '1744272651292'
+      sourceHandle: source
+      target: '1744274748426'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: answer
+      id: 1744274748426-source-answer-target
+      source: '1744274748426'
+      sourceHandle: source
+      target: answer
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: 开始
+        type: start
+        variables: []
+      height: 53
+      id: '1744272651292'
+      position:
+        x: -111.49445551872354
+        y: 200.66633340871428
+      positionAbsolute:
+        x: -111.49445551872354
+        y: 200.66633340871428
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        answer: '{{#1744274748426.text#}}'
+        desc: ''
+        selected: false
+        title: 直接回复
+        type: answer
+        variables: []
+      height: 104
+      id: answer
+      position:
+        x: 555.4256499044862
+        y: 276.85229958283
+      positionAbsolute:
+        x: 555.4256499044862
+        y: 276.85229958283
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - sys
+          - query
+        desc: ''
+        model:
+          completion_params: {}
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: a4a5d1d6-d10e-4de5-bb6d-5d7f819ef990
+          role: system
+          text: "        本任务旨在处理用户输入的信息，确保每个关键信息（Key）完整无误。用户如果没有输入其他关键信息（Key），请不要额外联想。用户输入的信息将通过冒号“:”分割，冒号前的部分为Key，冒号后的部分为Value。请遵循以下步骤完成任务创建一个订单：\n\
+            \n        1. 首先，检查用户输入的信息是否包含以下必需的Keys：tittle、POL、POD、ETD、Container Type、Carrier、Vesl/Voy、订舱代理。这些Keys是信息处理的基础。\n\
+            \n    2. 如果发现用户输入中缺少任何必需的Key，请向用户询问缺失的部分。继续循环询问，直到所有必需的Keys都已补全。\n\n \
+            \     3. 对于单号编码，确保它以\"SASA\"开头，并生成一个包含8位的随机数。\n\n        4. 在处理用户输入时，请确保不包含任何XML标签和思考过程。输出生成后的订单信息即可\n\
+            \n        请根据用户的输入，按照上述步骤处理信息，并生成相应的订单信息\n{{#context#}}"
+        selected: false
+        title: 订舱聚合模型
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 89
+      id: '1744274748426'
+      position:
+        x: 207.94864573278647
+        y: 276.85229958283
+      positionAbsolute:
+        x: 207.94864573278647
+        y: 276.85229958283
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      id: intent_classifier
+      type: llm
+      data:
+        model:
+          provider: openai
+          name: gpt-4o-mini
+          prompt_template:
+            - role: system
+              text: |
+              识别用户意图并结构化输入：
+               {"required_fields": ["POL","POD","ETD","ContainerType","Carrier","VesselVoy","Title","BookingAgent"],
+               "user_input": "{{query}}"  }
+      type: custom
+      width: 244
+    viewport:
+      x: -64.48861142438977
+      y: 50.083296489094494
+      zoom: 0.971307495541633
